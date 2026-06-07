@@ -1,13 +1,14 @@
 """
 agent-loop-controller: Control agent loops with pause, resume, step-limit, and abort.
 """
+
 from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 
 class LoopState(str, Enum):
@@ -98,12 +99,15 @@ class LoopController:
                 self._stats.state = LoopState.RUNNING
                 self._stats.start_time = time.monotonic()
 
+            # If taking this step would exceed the limit, do not count it:
+            # the step never runs, it raises instead.
+            if self._max_steps is not None and self._stats.steps >= self._max_steps:
+                self._stats.state = LoopState.COMPLETED
+                self._stats.end_time = time.monotonic()
+                raise LoopStepLimitError(f"Max steps ({self._max_steps}) exceeded")
+
             self._stats.steps += 1
             steps = self._stats.steps
-
-        if self._max_steps is not None and steps > self._max_steps:
-            self._finish(LoopState.COMPLETED)
-            raise LoopStepLimitError(f"Max steps ({self._max_steps}) exceeded")
 
         if self._on_step:
             self._on_step(self)
@@ -184,6 +188,9 @@ class LoopController:
 
 
 __all__ = [
-    "LoopController", "LoopState", "LoopStats",
-    "LoopAbortedError", "LoopStepLimitError",
+    "LoopController",
+    "LoopState",
+    "LoopStats",
+    "LoopAbortedError",
+    "LoopStepLimitError",
 ]

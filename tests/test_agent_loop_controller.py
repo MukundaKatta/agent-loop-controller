@@ -2,8 +2,10 @@ import threading
 import time
 import pytest
 from agent_loop_controller import (
-    LoopController, LoopState, LoopStats,
-    LoopAbortedError, LoopStepLimitError,
+    LoopController,
+    LoopState,
+    LoopAbortedError,
+    LoopStepLimitError,
 )
 
 
@@ -22,14 +24,17 @@ def test_steps_count():
 
 def test_max_steps_raises():
     ctrl = LoopController(max_steps=3)
-    ctrl.step(); ctrl.step(); ctrl.step()
+    ctrl.step()
+    ctrl.step()
+    ctrl.step()
     with pytest.raises(LoopStepLimitError):
         ctrl.step()
 
 
 def test_max_steps_is_done_after_limit():
     ctrl = LoopController(max_steps=2)
-    ctrl.step(); ctrl.step()
+    ctrl.step()
+    ctrl.step()
     with pytest.raises(LoopStepLimitError):
         ctrl.step()
     assert ctrl.is_done()
@@ -103,7 +108,8 @@ def test_pause_blocks_step():
 
 def test_reset():
     ctrl = LoopController()
-    ctrl.step(); ctrl.step()
+    ctrl.step()
+    ctrl.step()
     ctrl.abort()
     ctrl.reset()
     assert ctrl.state == LoopState.IDLE
@@ -112,7 +118,8 @@ def test_reset():
 
 def test_reset_allows_reuse():
     ctrl = LoopController(max_steps=2)
-    ctrl.step(); ctrl.step()
+    ctrl.step()
+    ctrl.step()
     with pytest.raises(LoopStepLimitError):
         ctrl.step()
     ctrl.reset()
@@ -123,7 +130,9 @@ def test_reset_allows_reuse():
 def test_on_step_callback():
     called = []
     ctrl = LoopController(on_step=lambda c: called.append(c.steps))
-    ctrl.step(); ctrl.step(); ctrl.step()
+    ctrl.step()
+    ctrl.step()
+    ctrl.step()
     assert called == [1, 2, 3]
 
 
@@ -136,7 +145,8 @@ def test_stats_elapsed():
 
 def test_stats_steps():
     ctrl = LoopController()
-    ctrl.step(); ctrl.step()
+    ctrl.step()
+    ctrl.step()
     assert ctrl.stats.steps == 2
 
 
@@ -155,3 +165,36 @@ def test_start():
     ctrl = LoopController()
     ctrl.start()
     assert ctrl.state == LoopState.RUNNING
+
+
+def test_step_count_not_incremented_when_limit_hit():
+    # The step that exceeds max_steps does not run, so it must not be counted.
+    ctrl = LoopController(max_steps=3)
+    ctrl.step()
+    ctrl.step()
+    ctrl.step()
+    with pytest.raises(LoopStepLimitError):
+        ctrl.step()
+    assert ctrl.steps == 3
+    assert ctrl.stats.steps == 3
+
+
+def test_on_step_not_called_when_limit_hit():
+    called = []
+    ctrl = LoopController(max_steps=2, on_step=lambda c: called.append(c.steps))
+    ctrl.step()
+    ctrl.step()
+    with pytest.raises(LoopStepLimitError):
+        ctrl.step()
+    assert called == [1, 2]
+
+
+def test_elapsed_frozen_after_finish():
+    ctrl = LoopController(max_steps=1)
+    ctrl.step()
+    with pytest.raises(LoopStepLimitError):
+        ctrl.step()
+    first = ctrl.stats.elapsed_s
+    time.sleep(0.02)
+    second = ctrl.stats.elapsed_s
+    assert first == second
