@@ -16,5 +16,13 @@ classifiers = [
     "Intended Audience :: Developers",
 ]
 
+[project.urls]
+Homepage = "https://github.com/MukundaKatta/agent-loop-controller"
+Repository = "https://github.com/MukundaKatta/agent-loop-controller"
+Issues = "https://github.com/MukundaKatta/agent-loop-controller/issues"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+agent_loop_controller = ["py.typed"]

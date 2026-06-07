@@ -1,5 +1,11 @@
-"""
-agent-loop-controller: Control agent loops with pause, resume, step-limit, and abort.
+"""agent-loop-controller: control agent loops with pause, resume, step-limit, and abort.
+
+The public entry point is :class:`LoopController`. A controller wraps the
+"run until done" loop of an agent and lets you bound it (``max_steps``), pause
+and resume it from another thread, and abort it cleanly. All control methods
+are thread-safe.
+
+See the project README for runnable examples.
 """
 from __future__ import annotations
 
@@ -77,15 +83,22 @@ class LoopController:
             self._stats.start_time = time.monotonic()
 
     def step(self) -> int:
-        """
-        Advance by one step.
+        """Advance the loop by one step.
 
-        - Blocks if the loop is paused.
-        - Raises LoopAbortedError if aborted.
-        - Raises LoopStepLimitError if max_steps exceeded.
-        Returns the current step count.
+        The call blocks while the loop is paused (see :meth:`pause` /
+        :meth:`resume`). When it returns, exactly one step has been counted.
+
+        :returns: the current step count (1 for the first successful step).
+        :raises LoopAbortedError: if the loop has been aborted.
+        :raises LoopStepLimitError: if calling ``step`` would exceed
+            ``max_steps``. In this case the step is **not** counted and the
+            loop transitions to :attr:`LoopState.COMPLETED`.
+
+        If the loop is already completed, the current step count is returned
+        without advancing.
         """
-        # Block while paused
+        # Block while paused. Re-check state afterwards because the loop may
+        # have been aborted while we were waiting.
         self._pause_event.wait()
 
         with self._lock:
@@ -94,6 +107,17 @@ class LoopController:
                 raise LoopAbortedError("Loop was aborted")
             if state == LoopState.COMPLETED:
                 return self._stats.steps
+
+            # Check the step limit *before* incrementing so that a rejected
+            # step is never counted. Without this, ``steps`` could end up
+            # larger than ``max_steps`` after the limit is hit.
+            if self._max_steps is not None and self._stats.steps >= self._max_steps:
+                self._stats.state = LoopState.COMPLETED
+                self._stats.end_time = time.monotonic()
+                raise LoopStepLimitError(
+                    f"Max steps ({self._max_steps}) exceeded"
+                )
+
             if state == LoopState.IDLE:
                 self._stats.state = LoopState.RUNNING
                 self._stats.start_time = time.monotonic()
@@ -101,11 +125,7 @@ class LoopController:
             self._stats.steps += 1
             steps = self._stats.steps
 
-        if self._max_steps is not None and steps > self._max_steps:
-            self._finish(LoopState.COMPLETED)
-            raise LoopStepLimitError(f"Max steps ({self._max_steps}) exceeded")
-
-        if self._on_step:
+        if self._on_step is not None:
             self._on_step(self)
 
         return steps
